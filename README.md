@@ -1,9 +1,11 @@
 # PC Temp Monitor
 
-Reads your PC's hardware temperatures (CPU, GPU, motherboard, RAM, SSD, and PSU
-if exposed) **and your live in-game FPS**, and shows them on your USB-connected
-Android phone as a compact, single-screen, auto-refreshing dashboard with
-sparkline history graphs.
+![Dashboard](screenshot.png)
+
+Reads your PC's hardware temperatures (CPU, GPU, motherboard, RAM, SSD) **and your
+live in-game FPS**, and shows them on your phone **over WiFi** as a compact,
+single-screen dashboard of fishbowl gauges — temperature with a 24-hour max marker,
+load shown as the water level, plus network, clock and uptime.
 
 ## How it works
 - **collector.ps1** — loads LibreHardwareMonitor, reads all sensors, reads FPS from
