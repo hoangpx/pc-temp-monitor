@@ -39,6 +39,24 @@ or **double-tap** the screen to go fullscreen.
 > (DHCP). Re-run `Start-Monitor.cmd` to see the new address, or set a static IP /
 > DHCP reservation on your router for a permanent link.
 
+## Set up the old phone
+
+Any spare Android phone works great — stand it next to your case as a mini status display.
+
+1. Put the phone on the **same WiFi** as the PC.
+2. Open **`http://<your-pc-ip>:8085`** in Chrome (the launcher prints the exact address).
+3. Turn the phone to **landscape**.
+4. Tap the **⛶** button (top-right) — or **double-tap** the screen — to go fullscreen and
+   hide the address bar. Optional: Chrome **⋮ → Add to Home screen** for a one-tap icon.
+5. **Keep the screen on** — plug the phone in and either:
+   - Settings → Display → **Screen timeout → Never** (or the longest option), or
+   - enable **Developer options → Stay awake** (screen never sleeps while charging).
+6. Lower the brightness to protect the panel, prop it up, and you've got a live
+   temperature / FPS / network dashboard on your desk.
+
+> Tip: put the phone in **airplane mode with WiFi on** to keep it quiet and reduce
+> battery wear while it runs 24/7.
+
 ## Auto-start at login
 Double-click **`Install-Autostart.cmd`** and accept the Administrator prompt. It
 creates a Scheduled Task that launches the monitor **elevated at every login**
