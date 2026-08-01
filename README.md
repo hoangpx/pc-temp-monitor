@@ -1,5 +1,7 @@
 # PC Temp Monitor
 
+**Turn an old phone into a live PC temperature & FPS monitor — over WiFi.**
+
 ![Dashboard](screenshot.png)
 
 Reads your PC's hardware temperatures (CPU, GPU, motherboard, RAM, SSD) **and your
