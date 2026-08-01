@@ -1,0 +1,11 @@
+# Large / unused third-party download (WiFi mode doesn't use adb).
+# Re-download from https://dl.google.com/android/repository/platform-tools-latest-windows.zip if ever needed.
+adb/
+
+# Runtime artifacts
+fps.csv
+fps_reader.log
+*.log
+_*.txt
+_*.ps1
+lhm_extract/

@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#000000" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="apple-touch-icon" href="/icon-192.png" />
+<title>PC Temps</title>
+<style>
+  :root { --bg:#000; --panel:#0b0b0d; --text:#f4f6fb; --muted:#8b93a3; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; margin:0; }
+  html,body { height:100%; overflow:hidden; background:var(--bg); color:var(--text);
+    font-family:-apple-system,"Segoe UI",Roboto,system-ui,sans-serif; }
+  #grid { height:100dvh; width:100vw; display:flex; flex-direction:column; gap:6px; padding:6px; }
+  .panels { flex:1; display:grid; grid-template-columns:1fr 1fr 1fr; grid-template-rows:1fr 1fr; gap:6px; min-height:0; }
+  .panel { background:var(--panel); border-radius:14px; padding:5px 6px 2px; min-height:0; min-width:0;
+    display:flex; flex-direction:column; position:relative; }
+  .ptitle { text-align:center; font-weight:800; font-size:clamp(12px,2.1vw,18px); letter-spacing:.4px; }
+  .psub { text-align:center; color:var(--muted); font-size:clamp(8px,1.2vw,11px);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .body { flex:1; display:flex; align-items:center; justify-content:center; min-height:0; }
+  .gauge { height:100%; width:100%; display:flex; align-items:center; justify-content:center; min-height:0; }
+  .gauge svg { height:100%; width:100%; display:block; }
+  .ramminis { gap:2px; }
+  .ramminicol { flex:1; display:flex; flex-direction:column; align-items:center; min-width:0; min-height:0; }
+  .rlab { font-size:clamp(7px,1.1vw,10px); color:var(--muted); font-weight:700; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+  .minigauge { flex:1; width:100%; min-height:0; display:flex; align-items:center; justify-content:center; }
+  .minigauge svg { height:100%; width:100%; display:block; }
+  .bolt { position:absolute; top:5px; right:8px; color:#facc15; font-size:clamp(11px,1.8vw,16px); }
+  .dot { position:absolute; top:6px; left:8px; width:7px; height:7px; border-radius:50%; background:#ef4444; }
+  .dot.live { background:#34d399; box-shadow:0 0 7px #34d399; }
+  #strip { display:flex; gap:6px; height:clamp(42px,7vh,64px); flex:none; }
+  .chip { flex:1; background:var(--panel); border-radius:12px; display:flex; align-items:center;
+    justify-content:center; gap:10px; min-width:0; padding:0 8px; }
+  .chip .clab { color:var(--muted); font-weight:700; font-size:clamp(9px,1.2vw,12px); letter-spacing:.5px; }
+  .chip .cval { font-weight:800; font-variant-numeric:tabular-nums; font-size:clamp(15px,2.8vw,26px); }
+  .chip .cval small { font-size:.62em; color:var(--muted); font-weight:700; margin-left:1px; }
+  .net-up { color:#f5b301; } .net-dn { color:#22d3ee; }
+  #fsbtn { position:fixed; top:8px; right:8px; z-index:20; width:34px; height:34px; padding:0; border:none;
+    border-radius:9px; background:rgba(255,255,255,.14); color:#fff; font-size:17px; line-height:34px; text-align:center; opacity:.5; }
+  #fsbtn:active { opacity:1; }
+  @media (orientation: portrait) {
+    #grid { position:absolute; top:100%; left:0; width:100vh; height:100vw;
+      transform:rotate(-90deg); transform-origin:left top; }
+  }
+</style>
+</head>
+<body>
+<div id="grid">
+  <div class="panels">
+    <div class="panel" id="pCPU"></div>
+    <div class="panel" id="pGPU"></div>
+    <div class="panel" id="pFPS"></div>
+    <div class="panel" id="pMAIN"></div>
+    <div class="panel" id="pRAM"></div>
+    <div class="panel" id="pSSD"></div>
+  </div>
+  <div id="strip">
+    <div class="chip" id="cTIME"></div>
+    <div class="chip" id="cUP"></div>
+    <div class="chip" id="cNET"></div>
+  </div>
+</div>
+<button id="fsbtn" aria-label="Fullscreen">&#9974;</button>
+
+<script>
+const byId = id => document.getElementById(id);
+const TSCALE = 100, R = 42, C = 2*Math.PI*R;
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+function heatCol(t,crit){ if(t==null||isNaN(t)) return "#8b93a3"; const r=t/crit; return r>=0.9?"#ef4444":r>=0.75?"#f5b301":"#34d399"; }
+function esc(s){ return String(s==null?"":s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+function cleanName(s){ return String(s==null?"":s).replace(/[\x00-\x1F\x7F][\s\S]*$/,"").replace(/[\s?>\-]+$/,"").trim(); }
+function fmtBps(b){ if(b==null) return "--";
+  if(b>=1e6) return (b/1e6).toFixed(1)+'<small>MB/s</small>';
+  return Math.max(0.1,b/1e3).toFixed(1)+'<small>KB/s</small>'; }
+function fmtUptime(sec){ sec=Math.max(0,Math.floor(sec));
+  const dd=Math.floor(sec/86400); sec-=dd*86400;
+  const h=Math.floor(sec/3600), m=Math.floor((sec-h*3600)/60), p=x=>String(x).padStart(2,"0");
+  return (dd>0?dd+"d ":"")+p(h)+":"+p(m); }
+function smoothCurves(pts){ const n=pts.length; let d="";
+  for(let i=0;i<n-1;i++){ const p0=pts[i>0?i-1:i],p1=pts[i],p2=pts[i+1],p3=pts[i+2<n?i+2:i+1];
+    const c1x=p1[0]+(p2[0]-p0[0])/6,c1y=p1[1]+(p2[1]-p0[1])/6,c2x=p2[0]-(p3[0]-p1[0])/6,c2y=p2[1]-(p3[1]-p1[1])/6;
+    d+=" C "+c1x.toFixed(1)+" "+c1y.toFixed(1)+" "+c2x.toFixed(1)+" "+c2y.toFixed(1)+" "+p2[0].toFixed(1)+" "+p2[1].toFixed(1);
+  } return d; }
+function pt(cx,cy,r,d){ const a=d*Math.PI/180; return [cx+r*Math.sin(a), cy-r*Math.cos(a)]; }
+function arcPath(cx,cy,r,d0,d1){ const p0=pt(cx,cy,r,d0),p1=pt(cx,cy,r,d1); const large=(d1-d0)>180?1:0;
+  return "M "+p0[0].toFixed(2)+" "+p0[1].toFixed(2)+" A "+r+" "+r+" 0 "+large+" 1 "+p1[0].toFixed(2)+" "+p1[1].toFixed(2); }
+
+// rolling 24-hour max temp per gauge (hourly buckets, persisted)
+const MAX24 = {};
+function loadMx(key){ try{ return JSON.parse(localStorage.getItem("mx24_"+key))||{}; }catch(e){ return {}; } }
+function pushMax24(key,v){ if(v==null||isNaN(v)) return; const h=Math.floor(Date.now()/3600000);
+  const b=MAX24[key]||(MAX24[key]=loadMx(key));
+  if(b[h]==null||v>b[h]) b[h]=v; for(const k in b) if(h-(+k)>=24) delete b[k];
+  try{ localStorage.setItem("mx24_"+key,JSON.stringify(b)); }catch(e){} }
+function getMax24(key){ const b=MAX24[key]||(MAX24[key]=loadMx(key)); const h=Math.floor(Date.now()/3600000); let m=0;
+  for(const k in b) if(h-(+k)<24 && b[k]>m) m=b[k]; return m; }
+
+// smoothed-value registry (eased toward targets every animation frame)
+const S = {};
+function tgt(id,v){ let s=S[id]; if(!s) s=S[id]={c:0,t:0,valid:false,init:false};
+  if(v==null||isNaN(v)){ s.valid=false; } else { s.t=v; if(!s.init){s.c=v;s.init=true;} s.valid=true; } }
+function cur(id){ const s=S[id]; return (s&&s.valid)?s.c:null; }
+function stepAll(k){ for(const id in S){ const s=S[id]; if(s.valid) s.c+=(s.t-s.c)*k; } }
+
+// water samples per gauge (the scrolling load chart)
+const SAMP = {};
+function pushSamp(key,v){ const h=SAMP[key]||(SAMP[key]=[]); h.push(v==null||isNaN(v)?0:clamp(v,0,100)); if(h.length>40) h.shift(); }
+
+let fetchInterval=1500, lastFetchMs=0, lastSampleMs=0, upBase=null, upAt=0, lastFrame=0;
+let ramBuilt=-1, ramKeys=[];
+const FILLUNIT = {CPU:"%",GPU:"%",SSD:"%",MAIN:"W"};
+const CRIT = {CPU:95,GPU:90,MAIN:80,SSD:70};
+
+// ---- fishbowl gauge skeleton (built once, updated in place) ----------------
+function fishbowlSVG(key){
+  return '<svg viewBox="0 0 100 100">'+
+    '<defs>'+
+      '<clipPath id="clip_'+key+'"><circle cx="50" cy="50" r="37"/></clipPath>'+
+      '<linearGradient id="grad_'+key+'" x1="0" y1="0" x2="0" y2="1">'+
+        '<stop offset="0" stop-color="#9bdcff" stop-opacity="0.34"/>'+
+        '<stop offset="1" stop-color="#38bdf8" stop-opacity="0.11"/></linearGradient>'+
+    '</defs>'+
+    '<g clip-path="url(#clip_'+key+')">'+
+      '<path id="wpath_'+key+'" fill="url(#grad_'+key+')" d="" style="display:none"/>'+
+      '<path id="wline_'+key+'" fill="none" stroke="#7dd3fc" stroke-width="1" stroke-opacity="0.55" stroke-linejoin="round" d="" style="display:none"/>'+
+    '</g>'+
+    '<circle cx="50" cy="50" r="'+R+'" fill="none" stroke="#22262e" stroke-width="6"/>'+
+    '<path id="arc_'+key+'" fill="none" stroke="#3aa0f2" stroke-width="6" stroke-linecap="round" d=""/>'+
+    '<g id="dot_'+key+'" transform="translate(50 92)">'+
+      '<circle r="9" fill="#ef4444"/>'+
+      '<text id="dotv_'+key+'" text-anchor="middle" y="3.2" fill="#fff" font-size="9.5" font-weight="800">0</text>'+
+    '</g>'+
+    '<text id="t_'+key+'" x="50" y="52" text-anchor="middle" fill="#8b93a3" font-size="26" font-weight="800">--</text>'+
+    '<text x="50" y="64" text-anchor="middle" fill="#8b93a3" font-size="8.5" font-weight="700">&#176;C</text>'+
+    '<text id="f_'+key+'" x="50" y="82" text-anchor="middle" fill="#7dd3fc" font-size="8.5" font-weight="700"></text>'+
+    '</svg>';
+}
+const GAUGES=[{key:"CPU",el:"pCPU",title:"CPU"},{key:"GPU",el:"pGPU",title:"GPU",bolt:true},
+  {key:"MAIN",el:"pMAIN",title:"MAIN"},{key:"SSD",el:"pSSD",title:"SSD"}];
+function buildGauges(){ for(const g of GAUGES) byId(g.el).innerHTML=
+  '<span class="dot"></span>'+(g.bolt?'<span class="bolt">&#9889;</span>':'')+
+  '<div class="ptitle">'+g.title+'</div><div class="psub" id="sub_'+g.key+'"></div>'+
+  '<div class="body"><div class="gauge">'+fishbowlSVG(g.key)+'</div></div>'; }
+function buildRam(n){
+  let inner='<span class="dot"></span><div class="ptitle">RAM</div><div class="psub" id="sub_RAMP"></div><div class="body ramminis">';
+  if(n<1) inner+='<div class="ramminicol"><div class="rlab">no sensor</div></div>';
+  for(let i=0;i<n;i++) inner+='<div class="ramminicol"><div class="rlab" id="sub_RAM'+i+'"></div>'+
+    '<div class="minigauge">'+fishbowlSVG("RAM"+i)+'</div></div>';
+  byId("pRAM").innerHTML=inner+'</div>';
+}
+function buildFPS(){ const a=0.75*C;
+  byId("pFPS").innerHTML='<span class="dot"></span><div class="ptitle">FPS</div><div class="psub" id="fps_sub"></div>'+
+    '<div class="body"><div class="gauge"><svg viewBox="0 0 100 100">'+
+      '<circle cx="50" cy="50" r="'+R+'" fill="none" stroke="#22262e" stroke-width="9" stroke-linecap="round" stroke-dasharray="'+a.toFixed(1)+' '+C.toFixed(1)+'" transform="rotate(135 50 50)"/>'+
+      '<circle id="fpsarc" cx="50" cy="50" r="'+R+'" fill="none" stroke="#22d3ee" stroke-width="9" stroke-linecap="round" stroke-dasharray="0 '+C.toFixed(1)+'" transform="rotate(135 50 50)"/>'+
+      '<text id="fpsval" x="50" y="54" text-anchor="middle" fill="#f4f6fb" font-size="24" font-weight="800">--</text>'+
+      '<text x="50" y="66" text-anchor="middle" fill="#8b93a3" font-size="9" font-weight="700">FPS</text>'+
+    '</svg></div></div>'; }
+function buildStrip(){
+  byId("cTIME").innerHTML='<span class="clab">TIME</span><span class="cval" id="clock">--:--</span>';
+  byId("cUP").innerHTML='<span class="clab">UP</span><span class="cval" id="upclock">--</span>';
+  byId("cNET").innerHTML='<span class="clab">NET</span><span class="cval net-up" id="netup">--</span><span class="cval net-dn" id="netdn">--</span>';
+}
+
+// ---- data helpers ----------------------------------------------------------
+function grp(d,pred){ return (d.groups||[]).find(pred); }
+function sens(g,name,type){ if(!g) return null; const s=(g.sensors||[]).find(x=>x.name===name&&x.type===type); return s?s.value:null; }
+function maxTemp(g){ if(!g) return null;
+  const t=(g.sensors||[]).filter(s=>s.type==="Temperature"&&!/limit|resolution|warning|critical|threshold/i.test(s.name));
+  return t.length?Math.max(...t.map(s=>s.value)):null; }
+function catG(d,cat){ for(const g of (d.groups||[]).filter(x=>x.category===cat)){ const t=maxTemp(g); if(t!=null) return {t,g}; } return {t:null,g:null}; }
+function dimmTemps(d){ const out=[];
+  for(const g of (d.groups||[]).filter(x=>x.category==="RAM"))
+    for(const s of (g.sensors||[])) if(s.type==="Temperature" && /^DIMM\s*#/i.test(s.name)){
+      const brand=(cleanName(g.name).split(" - ")[0]||s.name).split(/\s+/).slice(0,2).join(" ");
+      out.push({temp:s.value, brand}); }
+  return out.sort((a,b)=>b.temp-a.temp); }
+
+// ---- receive data: set targets (no direct drawing) -------------------------
+function setTargets(d){
+  const now=performance.now();
+  if(lastFetchMs) fetchInterval=clamp(now-lastFetchMs,600,4000); lastFetchMs=now;
+
+  const cpu=grp(d,g=>g.category==="CPU");
+  const gpu=grp(d,g=>g.category==="GPU"&&/nvidia|geforce|rtx|gtx/i.test(g.name))||grp(d,g=>g.category==="GPU");
+  const ramU=grp(d,g=>g.category==="RAM"&&/total memory/i.test(g.name));
+  const mb=catG(d,"Motherboard"), st=catG(d,"Storage");
+
+  function setSub(id,name){ const e=byId(id); if(e) e.textContent=cleanName(name); }
+
+  const cpuLoad=sens(cpu,"CPU Total","Load"), cpuTemp=sens(cpu,"Core (Tctl/Tdie)","Temperature")??maxTemp(cpu);
+  setSub("sub_CPU",cpu?cpu.name:"CPU"); if(cpuTemp!=null) pushMax24("CPU",cpuTemp);
+  tgt("CPU.temp",cpuTemp); tgt("CPU.tmax",getMax24("CPU")); tgt("CPU.disp",cpuLoad); pushSamp("CPU",cpuLoad);
+
+  const gpuLoad=sens(gpu,"GPU Core","Load"), gpuTemp=sens(gpu,"GPU Core","Temperature")??maxTemp(gpu);
+  setSub("sub_GPU",gpu?gpu.name:"GPU"); if(gpuTemp!=null) pushMax24("GPU",gpuTemp);
+  tgt("GPU.temp",gpuTemp); tgt("GPU.tmax",getMax24("GPU")); tgt("GPU.disp",gpuLoad); pushSamp("GPU",gpuLoad);
+
+  const pkg=sens(cpu,"Package","Power"), pkgPct=pkg!=null?clamp(pkg/120*100,0,100):null;
+  setSub("sub_MAIN",mb.g?mb.g.name:"Motherboard"); if(mb.t!=null) pushMax24("MAIN",mb.t);
+  tgt("MAIN.temp",mb.t); tgt("MAIN.tmax",getMax24("MAIN")); tgt("MAIN.disp",pkg); pushSamp("MAIN",pkgPct);
+
+  const ssdAct=sens(st.g,"Total Activity","Load");
+  setSub("sub_SSD",st.g?st.g.name:"Storage"); if(st.t!=null) pushMax24("SSD",st.t);
+  tgt("SSD.temp",st.t); tgt("SSD.tmax",getMax24("SSD")); tgt("SSD.disp",ssdAct); pushSamp("SSD",ssdAct);
+
+  const ramLoad=sens(ramU,"Memory","Load"), dims=dimmTemps(d);
+  if(ramBuilt!==dims.length){ buildRam(dims.length); ramBuilt=dims.length; ramKeys=dims.map((_,i)=>"RAM"+i); }
+  const rp=byId("sub_RAMP"); if(rp) rp.textContent=(ramLoad!=null?Math.round(ramLoad)+"% used":"");
+  dims.forEach((dm,i)=>{ const k="RAM"+i; setSub("sub_"+k,dm.brand); if(dm.temp!=null) pushMax24(k,dm.temp);
+    tgt(k+".temp",dm.temp); tgt(k+".tmax",getMax24(k)); pushSamp(k,ramLoad); });
+
+  const fps=d.fps&&typeof d.fps.value==="number"?d.fps.value:null;
+  const fsub=byId("fps_sub"); if(fsub) fsub.textContent=fps==null?"no game running":cleanName(d.fps.app||"in-game");
+  tgt("FPS",fps);
+
+  const nets=(d.groups||[]).filter(g=>g.category==="Network");
+  const nsp=(g,n)=>{ const s=(g.sensors||[]).find(x=>x.name===n&&x.type==="Throughput"); return s?s.value:0; };
+  let net=null; if(nets.length){ const phys=nets.filter(g=>/wi-?fi|ethernet|wlan/i.test(g.name));
+    for(const g of (phys.length?phys:nets)){ const up=nsp(g,"Upload Speed"),dn=nsp(g,"Download Speed"); if(!net||(up+dn)>(net.up+net.dn)) net={up,dn}; } }
+  tgt("NET.up",net?net.up:null); tgt("NET.dn",net?net.dn:null);
+
+  if(typeof d.uptime==="number"){ upBase=d.uptime; upAt=performance.now(); }
+  lastSampleMs=now;
+}
+
+// ---- draw one fishbowl (called every frame) --------------------------------
+function drawGauge(key,crit,nowFrame){
+  const t=cur(key+".temp"), m=cur(key+".tmax");
+  const tt=byId("t_"+key); if(tt){ tt.textContent=(t==null)?"--":Math.round(t); tt.setAttribute("fill",heatCol(t,crit)); }
+  const arc=byId("arc_"+key); if(arc){ const tf=clamp((t||0)/TSCALE,0,0.999); arc.setAttribute("d",arcPath(50,50,R,180,180+tf*360)); }
+  const dot=byId("dot_"+key), dv=byId("dotv_"+key);
+  if(dot){ const mf=clamp((m||0)/TSCALE,0,1), p=pt(50,50,R,180+mf*360);
+    dot.setAttribute("transform","translate("+p[0].toFixed(1)+" "+p[1].toFixed(1)+")"); if(dv) dv.textContent=(m>0?Math.round(m):"--"); }
+  const ft=byId("f_"+key); if(ft){ const dv2=cur(key+".disp"), u=FILLUNIT[key]; ft.textContent=(u&&dv2!=null)?Math.round(dv2)+u:""; }
+  drawWater(key,nowFrame);
+}
+function drawWater(key,nowFrame){
+  const wp=byId("wpath_"+key), wl=byId("wline_"+key); if(!wp||!wl) return;
+  const h=SAMP[key]; if(!h||h.length<2){ wp.style.display="none"; wl.style.display="none"; return; }
+  const xL=4,xR=96,W=32,sx=(xR-xL)/W, frac=clamp((nowFrame-lastSampleMs)/fetchInterval,0,1);
+  const pts=[]; let mx=0;
+  for(let i=h.length-1;i>=0;i--){ const age=(h.length-1-i)+frac, x=xR-age*sx; if(x<xL-sx*2) break;
+    if(h[i]>mx) mx=h[i]; pts.unshift([x, 87-(clamp(h[i],0,100)/100)*74]); }
+  if(pts.length<2 || mx<0.5){ wp.style.display="none"; wl.style.display="none"; return; }
+  const first=pts[0][0].toFixed(1)+" "+pts[0][1].toFixed(1), curves=smoothCurves(pts);
+  wl.setAttribute("d","M "+first+curves);
+  wp.setAttribute("d","M "+pts[0][0].toFixed(1)+" 88 L "+first+curves+" L "+pts[pts.length-1][0].toFixed(1)+" 88 Z");
+  wp.style.display=""; wl.style.display="";
+}
+
+// ---- animation loop --------------------------------------------------------
+function draw(nowFrame){
+  requestAnimationFrame(draw);
+  if(nowFrame-lastFrame < 33) return;   // cap at ~30 fps to save battery
+  const dt=Math.min(0.1,(nowFrame-lastFrame)/1000); lastFrame=nowFrame;
+  stepAll(1-Math.exp(-dt/0.26));
+  drawGauge("CPU",CRIT.CPU,nowFrame); drawGauge("GPU",CRIT.GPU,nowFrame);
+  drawGauge("MAIN",CRIT.MAIN,nowFrame); drawGauge("SSD",CRIT.SSD,nowFrame);
+  for(const key of ramKeys) drawGauge(key,70,nowFrame);
+  const fps=cur("FPS"), fa=byId("fpsarc"), fv=byId("fpsval");
+  if(fv) fv.textContent=(fps==null)?"--":Math.round(fps);
+  if(fa){ const a=0.75*C, pct=clamp((fps||0)/240,0,1);
+    fa.setAttribute("stroke-dasharray",(a*pct).toFixed(1)+" "+C.toFixed(1));
+    fa.setAttribute("stroke",fps==null?"#2a2e37":fps>=50?"#22d3ee":fps>=30?"#f5b301":"#ef4444"); }
+  const nu=cur("NET.up"), nd=cur("NET.dn"), eu=byId("netup"), ed=byId("netdn");
+  if(eu) eu.innerHTML="&#9650; "+(nu==null?"--":fmtBps(nu));
+  if(ed) ed.innerHTML="&#9660; "+(nd==null?"--":fmtBps(nd));
+}
+
+async function tick(){ try{ const r=await fetch("/data.json",{cache:"no-store"}); if(!r.ok) throw 0;
+    setTargets(await r.json()); live(true); }catch(e){ live(false); } }
+function live(ok){ document.querySelectorAll(".dot").forEach(d=>d.classList.toggle("live",ok)); }
+
+function updateClock(){ const p=x=>String(x).padStart(2,"0");
+  const c=byId("clock"); if(c){ const n=new Date(); c.innerHTML=p(n.getHours())+":"+p(n.getMinutes())+'<small>:'+p(n.getSeconds())+'</small>'; }
+  const u=byId("upclock"); if(u&&upBase!=null) u.textContent=fmtUptime(upBase+(performance.now()-upAt)/1000); }
+
+function toggleFs(){ const el=document.documentElement;
+  if(!document.fullscreenElement&&!document.webkitFullscreenElement){(el.requestFullscreen||el.webkitRequestFullscreen||function(){}).call(el);}
+  else{(document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document);} }
+byId("fsbtn").addEventListener("click",e=>{e.stopPropagation();toggleFs();});
+let lastTap=0;
+document.addEventListener("click",()=>{ const now=Date.now(); if(now-lastTap<400) toggleFs(); lastTap=now; });
+if("serviceWorker" in navigator){ navigator.serviceWorker.register("/sw.js").catch(()=>{}); }
+
+buildGauges(); buildFPS(); buildStrip();
+tick(); setInterval(tick,1500); setInterval(updateClock,1000); requestAnimationFrame(draw);
+</script>
+</body>
+</html>
