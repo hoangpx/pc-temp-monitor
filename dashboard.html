@@ -120,6 +120,9 @@ let fetchInterval=1500, lastFetchMs=0, lastSampleMs=0, upBase=null, upAt=0, last
 let ramBuilt=-1, ramKeys=[];
 const FILLUNIT = {CPU:"%",GPU:"%",SSD:"%",MAIN:"W"};
 const CRIT = {CPU:95,GPU:90,MAIN:80,SSD:70};
+// estimated total power = (CPU pkg + GPU pkg + base) / PSU efficiency. Tune to taste.
+const PWR_BASE = 55;   // watts for board/RAM/drives/fans (not sensor-reported)
+const PWR_EFF  = 0.88; // PSU efficiency (AC wall draw = DC load / eff)
 
 // ---- fishbowl gauge skeleton (built once, updated in place) ----------------
 function fishbowlSVG(key){
@@ -232,7 +235,7 @@ function setTargets(d){
   tgt("NET.up",net?net.up:null); tgt("NET.dn",net?net.dn:null);
 
   const cpuPkg=sens(cpu,"Package","Power"), gpuPkg=sens(gpu,"GPU Package","Power");
-  tgt("PWR",(cpuPkg!=null||gpuPkg!=null)?((cpuPkg||0)+(gpuPkg||0)):null);
+  tgt("PWR",(cpuPkg!=null||gpuPkg!=null)?(((cpuPkg||0)+(gpuPkg||0)+PWR_BASE)/PWR_EFF):null);
 
   if(typeof d.uptime==="number"){ upBase=d.uptime; upAt=performance.now(); }
   lastSampleMs=now;
@@ -280,7 +283,7 @@ function draw(nowFrame){
   const nu=cur("NET.up"), nd=cur("NET.dn"), eu=byId("netup"), ed=byId("netdn");
   if(eu) eu.innerHTML="&#9650; "+(nu==null?"--":fmtBps(nu));
   if(ed) ed.innerHTML="&#9660; "+(nd==null?"--":fmtBps(nd));
-  const pw=cur("PWR"), ep=byId("pwrval"); if(ep) ep.innerHTML=(pw==null)?"--":Math.round(pw)+'<small>W</small>';
+  const pw=cur("PWR"), ep=byId("pwrval"); if(ep) ep.innerHTML=(pw==null)?"--":"~"+Math.round(pw)+'<small>W</small>';
 }
 
 async function tick(){ try{ const r=await fetch("/data.json",{cache:"no-store"}); if(!r.ok) throw 0;

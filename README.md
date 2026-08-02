@@ -72,9 +72,11 @@ To turn it off, double-click **`Uninstall-Autostart.cmd`**.
 ## Notes
 - **Double-tap a gauge** to reset its 24-hour max (the red badge). Double-tapping an
   empty area toggles fullscreen.
-- **PWR** = CPU + GPU package power (the measurable draw). True whole-system "wall"
-  wattage isn't shown — most PSUs (including FSP) don't report it; use a smart plug
-  or a digital PSU (e.g. Corsair iCUE) for that.
+- **PWR** = *estimated* whole-system wall draw (shown with a `~`): measured CPU + GPU
+  package power, plus a ~55 W base for the parts that don't report wattage
+  (board/VRM, RAM, drives, fans), divided by ~0.88 PSU efficiency. It's an estimate —
+  most PSUs (including FSP) don't report real power; use a smart plug or a digital PSU
+  (e.g. Corsair iCUE) for exact numbers. Tune `PWR_BASE` / `PWR_EFF` in `dashboard.html`.
 - A small **red dot** appears on the panels only when the phone loses the connection.
 - **FPS** only appears while a game (or other app) is actively rendering. It uses
   PresentMon and shows the frame rate of the dominant app; the desktop/system
