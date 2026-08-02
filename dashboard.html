@@ -183,6 +183,11 @@ function maxTemp(g){ if(!g) return null;
   const t=(g.sensors||[]).filter(s=>s.type==="Temperature"&&!/limit|resolution|warning|critical|threshold/i.test(s.name));
   return t.length?Math.max(...t.map(s=>s.value)):null; }
 function catG(d,cat){ for(const g of (d.groups||[]).filter(x=>x.category===cat)){ const t=maxTemp(g); if(t!=null) return {t,g}; } return {t:null,g:null}; }
+// motherboard temp = hottest board sensor, EXCLUDING the board's "CPU" reading (that just mirrors the CPU gauge)
+function mbTemp(d){ const g=(d.groups||[]).find(x=>x.category==="Motherboard"); if(!g) return {t:null,g:null};
+  const t=(g.sensors||[]).filter(s=>s.type==="Temperature"
+    && !/limit|resolution|warning|critical|threshold/i.test(s.name) && !/^cpu\b/i.test(s.name));
+  return {t:t.length?Math.max(...t.map(s=>s.value)):null, g}; }
 function dimmTemps(d){ const out=[];
   for(const g of (d.groups||[]).filter(x=>x.category==="RAM"))
     for(const s of (g.sensors||[])) if(s.type==="Temperature" && /^DIMM\s*#/i.test(s.name)){
@@ -198,7 +203,7 @@ function setTargets(d){
   const cpu=grp(d,g=>g.category==="CPU");
   const gpu=grp(d,g=>g.category==="GPU"&&/nvidia|geforce|rtx|gtx/i.test(g.name))||grp(d,g=>g.category==="GPU");
   const ramU=grp(d,g=>g.category==="RAM"&&/total memory/i.test(g.name));
-  const mb=catG(d,"Motherboard"), st=catG(d,"Storage");
+  const mb=mbTemp(d), st=catG(d,"Storage");
 
   function setSub(id,name){ const e=byId(id); if(e) e.textContent=cleanName(name); }
 
