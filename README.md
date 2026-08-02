@@ -70,6 +70,12 @@ To turn it off, double-click **`Uninstall-Autostart.cmd`**.
 - Change the port: `Start-Monitor.ps1 -Port 9000`
 
 ## Notes
+- **Double-tap a gauge** to reset its 24-hour max (the red badge). Double-tapping an
+  empty area toggles fullscreen.
+- **PWR** = CPU + GPU package power (the measurable draw). True whole-system "wall"
+  wattage isn't shown — most PSUs (including FSP) don't report it; use a smart plug
+  or a digital PSU (e.g. Corsair iCUE) for that.
+- A small **red dot** appears on the panels only when the phone loses the connection.
 - **FPS** only appears while a game (or other app) is actively rendering. It uses
   PresentMon and shows the frame rate of the dominant app; the desktop/system
   compositors are filtered out. No game running = no FPS tile.

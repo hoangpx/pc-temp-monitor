@@ -32,8 +32,9 @@
   .minigauge { flex:1; width:100%; min-height:0; display:flex; align-items:center; justify-content:center; }
   .minigauge svg { height:100%; width:100%; display:block; }
   .bolt { position:absolute; top:5px; right:8px; color:#facc15; font-size:clamp(11px,1.8vw,16px); }
-  .dot { position:absolute; top:6px; left:8px; width:7px; height:7px; border-radius:50%; background:#ef4444; }
-  .dot.live { background:#34d399; box-shadow:0 0 7px #34d399; }
+  .dot { position:absolute; top:6px; left:8px; width:8px; height:8px; border-radius:50%;
+    background:#ef4444; box-shadow:0 0 7px #ef4444; display:none; }
+  .dot.off { display:block; }   /* shown only when disconnected */
   #strip { display:flex; gap:6px; height:clamp(42px,7vh,64px); flex:none; }
   .chip { flex:1; background:var(--panel); border-radius:12px; display:flex; align-items:center;
     justify-content:center; gap:8px; min-width:0; padding:0 6px; white-space:nowrap; overflow:hidden; }
@@ -63,6 +64,7 @@
   <div id="strip">
     <div class="chip" id="cTIME"></div>
     <div class="chip" id="cUP"></div>
+    <div class="chip" id="cPWR"></div>
     <div class="chip" id="cNET"></div>
   </div>
 </div>
@@ -100,6 +102,8 @@ function pushMax24(key,v){ if(v==null||isNaN(v)) return; const h=Math.floor(Date
   try{ localStorage.setItem("mx24_"+key,JSON.stringify(b)); }catch(e){} }
 function getMax24(key){ const b=MAX24[key]||(MAX24[key]=loadMx(key)); const h=Math.floor(Date.now()/3600000); let m=0;
   for(const k in b) if(h-(+k)<24 && b[k]>m) m=b[k]; return m; }
+function resetMax(key){ MAX24[key]={}; try{ localStorage.removeItem("mx24_"+key); }catch(e){}
+  const t=cur(key+".temp"); if(t!=null){ pushMax24(key,t); tgt(key+".tmax",getMax24(key)); } }
 
 // smoothed-value registry (eased toward targets every animation frame)
 const S = {};
@@ -143,14 +147,14 @@ function fishbowlSVG(key){
 }
 const GAUGES=[{key:"CPU",el:"pCPU",title:"CPU"},{key:"GPU",el:"pGPU",title:"GPU",bolt:true},
   {key:"MAIN",el:"pMAIN",title:"MAIN"},{key:"SSD",el:"pSSD",title:"SSD"}];
-function buildGauges(){ for(const g of GAUGES) byId(g.el).innerHTML=
-  '<span class="dot"></span>'+(g.bolt?'<span class="bolt">&#9889;</span>':'')+
+function buildGauges(){ for(const g of GAUGES){ const el=byId(g.el); el.setAttribute("data-gkey",g.key);
+  el.innerHTML='<span class="dot"></span>'+(g.bolt?'<span class="bolt">&#9889;</span>':'')+
   '<div class="ptitle">'+g.title+'</div><div class="psub" id="sub_'+g.key+'"></div>'+
-  '<div class="body"><div class="gauge">'+fishbowlSVG(g.key)+'</div></div>'; }
+  '<div class="body"><div class="gauge">'+fishbowlSVG(g.key)+'</div></div>'; } }
 function buildRam(n){
   let inner='<span class="dot"></span><div class="ptitle">RAM</div><div class="psub" id="sub_RAMP"></div><div class="body ramminis">';
   if(n<1) inner+='<div class="ramminicol"><div class="rlab">no sensor</div></div>';
-  for(let i=0;i<n;i++) inner+='<div class="ramminicol"><div class="rlab" id="sub_RAM'+i+'"></div>'+
+  for(let i=0;i<n;i++) inner+='<div class="ramminicol" data-gkey="RAM'+i+'"><div class="rlab" id="sub_RAM'+i+'"></div>'+
     '<div class="minigauge">'+fishbowlSVG("RAM"+i)+'</div></div>';
   byId("pRAM").innerHTML=inner+'</div>';
 }
@@ -165,6 +169,7 @@ function buildFPS(){ const a=0.75*C;
 function buildStrip(){
   byId("cTIME").innerHTML='<span class="clab">TIME</span><span class="cval" id="clock">--:--</span>';
   byId("cUP").innerHTML='<span class="clab">UP</span><span class="cval" id="upclock">--</span>';
+  byId("cPWR").innerHTML='<span class="clab">PWR</span><span class="cval" id="pwrval">--</span>';
   byId("cNET").innerHTML='<span class="clab">NET</span><span class="cval net-up" id="netup">--</span><span class="cval net-dn" id="netdn">--</span>';
 }
 
@@ -226,6 +231,9 @@ function setTargets(d){
     for(const g of (phys.length?phys:nets)){ const up=nsp(g,"Upload Speed"),dn=nsp(g,"Download Speed"); if(!net||(up+dn)>(net.up+net.dn)) net={up,dn}; } }
   tgt("NET.up",net?net.up:null); tgt("NET.dn",net?net.dn:null);
 
+  const cpuPkg=sens(cpu,"Package","Power"), gpuPkg=sens(gpu,"GPU Package","Power");
+  tgt("PWR",(cpuPkg!=null||gpuPkg!=null)?((cpuPkg||0)+(gpuPkg||0)):null);
+
   if(typeof d.uptime==="number"){ upBase=d.uptime; upAt=performance.now(); }
   lastSampleMs=now;
 }
@@ -272,11 +280,12 @@ function draw(nowFrame){
   const nu=cur("NET.up"), nd=cur("NET.dn"), eu=byId("netup"), ed=byId("netdn");
   if(eu) eu.innerHTML="&#9650; "+(nu==null?"--":fmtBps(nu));
   if(ed) ed.innerHTML="&#9660; "+(nd==null?"--":fmtBps(nd));
+  const pw=cur("PWR"), ep=byId("pwrval"); if(ep) ep.innerHTML=(pw==null)?"--":Math.round(pw)+'<small>W</small>';
 }
 
 async function tick(){ try{ const r=await fetch("/data.json",{cache:"no-store"}); if(!r.ok) throw 0;
     setTargets(await r.json()); live(true); }catch(e){ live(false); } }
-function live(ok){ document.querySelectorAll(".dot").forEach(d=>d.classList.toggle("live",ok)); }
+function live(ok){ document.querySelectorAll(".dot").forEach(d=>d.classList.toggle("off",!ok)); }
 
 function updateClock(){ const p=x=>String(x).padStart(2,"0");
   const c=byId("clock"); if(c){ const n=new Date(); c.innerHTML=p(n.getHours())+":"+p(n.getMinutes())+'<small>:'+p(n.getSeconds())+'</small>'; }
@@ -287,7 +296,10 @@ function toggleFs(){ const el=document.documentElement;
   else{(document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document);} }
 byId("fsbtn").addEventListener("click",e=>{e.stopPropagation();toggleFs();});
 let lastTap=0;
-document.addEventListener("click",()=>{ const now=Date.now(); if(now-lastTap<400) toggleFs(); lastTap=now; });
+document.addEventListener("click",e=>{ const now=Date.now();
+  if(now-lastTap<400){ const g=e.target.closest("[data-gkey]");
+    if(g) resetMax(g.getAttribute("data-gkey")); else toggleFs(); lastTap=0; }
+  else lastTap=now; });
 if("serviceWorker" in navigator){ navigator.serviceWorker.register("/sw.js").catch(()=>{}); }
 
 buildGauges(); buildFPS(); buildStrip();
