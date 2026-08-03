@@ -78,6 +78,11 @@ To turn it off, double-click **`Uninstall-Autostart.cmd`**.
   most PSUs (including FSP) don't report real power; use a smart plug or a digital PSU
   (e.g. Corsair iCUE) for exact numbers. Tune `PWR_BASE` / `PWR_EFF` in `dashboard.html`.
 - A small **red dot** appears on the panels only when the phone loses the connection.
+- **Auto screen-rest:** after ~10 min with no signal (PC off/asleep) the screen goes
+  fully black to rest — on OLED that's ~0 power and no burn-in — and **auto-restores
+  the instant the PC is back**. Tap the black screen to peek for 30s. (Keep the phone on
+  *Stay awake while charging* so it can restore itself; a web page can't wake a truly
+  slept screen.) Change the timeout via `SLEEP_AFTER` in `dashboard.html`.
 - **FPS** only appears while a game (or other app) is actively rendering. It uses
   PresentMon and shows the frame rate of the dominant app; the desktop/system
   compositors are filtered out. No game running = no FPS tile.
